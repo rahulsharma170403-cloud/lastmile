@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LastMile — routes for every vehicle</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root {
+      --bg: #0f1115; --panel: #171a21; --panel-2: #1e222b; --border: #2a2f3a;
+      --text: #e6e8ec; --muted: #9aa1ac; --accent: #ff6b35; --accent-2: #4ade80; --danger: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+    #app { display: flex; height: 100vh; }
+    #sidebar { width: 370px; min-width: 370px; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow-y: auto; }
+    #map { flex: 1; }
+    .brand { padding: 18px 18px 12px; border-bottom: 1px solid var(--border); }
+    .brand h1 { margin: 0; font-size: 18px; letter-spacing: -0.02em; }
+    .brand h1 span { color: var(--accent); }
+    .brand p { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+    .section { padding: 14px 18px; border-bottom: 1px solid var(--border); }
+    .section h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 10px; }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+    input[type="text"], textarea, select {
+      width: 100%; background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+      border-radius: 8px; padding: 9px 10px; font-size: 13px; font-family: inherit; resize: vertical;
+    }
+    input:focus, textarea:focus { outline: none; border-color: var(--accent); }
+    .row { display: flex; gap: 8px; } .row > * { flex: 1; }
+    button {
+      border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+      border-radius: 8px; padding: 9px 12px; font-size: 13px; cursor: pointer; font-family: inherit;
+      transition: all .12s ease; width: 100%;
+    }
+    button:hover { border-color: var(--accent); }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+    button.primary:hover { filter: brightness(1.08); }
+    button.ghost { background: transparent; }
+    button.danger { color: var(--danger); }
+    button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .step { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 8px; font-size: 12px; color: var(--muted); }
+    .step .num { background: var(--panel-2); border: 1px solid var(--border); width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; flex-shrink: 0; color: var(--text); }
+    .hint { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.4; }
+    .link-box { background: var(--panel-2); border: 1px dashed var(--accent); border-radius: 8px; padding: 10px; font-size: 11px; word-break: break-all; color: var(--accent-2); max-height: 90px; overflow-y: auto; }
+    .search-results { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; margin-top: 6px; overflow: hidden; }
+    .search-results div { padding: 8px 10px; font-size: 12px; cursor: pointer; border-bottom: 1px solid var(--border); }
+    .search-results div:last-child { border-bottom: none; }
+    .search-results div:hover { background: var(--accent); color: #fff; }
+    .badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(74,222,128,.12); border: 1px solid var(--accent-2); color: var(--accent-2); padding: 6px 10px; border-radius: 999px; font-size: 12px; }
+
+    /* mode selector */
+    .modes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .mode {
+      display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 4px;
+      border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); cursor: pointer;
+      font-size: 11px; color: var(--muted); position: relative; transition: all .12s;
+    }
+    .mode .emoji { font-size: 20px; line-height: 1; }
+    .mode:hover { border-color: var(--muted); }
+    .mode.sel { color: #fff; }
+    .mode .count {
+      position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 4px;
+      border-radius: 999px; font-size: 10px; font-weight: 700; display: none; align-items: center; justify-content: center;
+    }
+    .mode.has .count { display: flex; }
+    .warn { background: rgba(239,68,68,.12); border: 1px solid var(--danger); color: #fca5a5; border-radius: 10px; padding: 10px 12px; font-size: 13px; line-height: 1.45; margin-bottom: 8px; }
+    .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--accent-2); color: #062; padding: 10px 18px; border-radius: 999px; font-size: 13px; font-weight: 600; z-index: 2000; opacity: 0; transition: opacity .2s; pointer-events: none; }
+    .toast.show { opacity: 1; }
+    .footer { padding: 14px 18px; font-size: 11px; color: var(--muted); }
+    .leaflet-container { background: #0b0d10; }
+    @media (max-width: 720px) {
+      #app { flex-direction: column; }
+      #sidebar { width: 100%; min-width: 0; max-height: 48vh; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="sidebar"></div>
+    <div id="map"></div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+  (function () {
+    "use strict";
+
+    const MODES = [
+      { key: "walk",  label: "Walk",  emoji: "🚶", color: "#4ade80", gmaps: "walking"   },
+      { key: "bike",  label: "Bike",  emoji: "🏍️", color: "#ff6b35", gmaps: "bicycling" },
+      { key: "car",   label: "Car",   emoji: "🚗", color: "#3b82f6", gmaps: "driving"   },
+      { key: "truck", label: "Truck", emoji: "🚚", color: "#a855f7", gmaps: "driving"   },
+    ];
+    const MODE = Object.fromEntries(MODES.map(m => [m.key, m]));
+
+    function decodeState() {
+      const h = location.hash.slice(1);
+      if (!h.startsWith("r=")) return null;
+      try { return JSON.parse(decodeURIComponent(escape(atob(h.slice(2))))); } catch (e) { return null; }
+    }
+    function encodeState(state) { return "r=" + btoa(unescape(encodeURIComponent(JSON.stringify(state)))); }
+
+    const toast = (msg) => {
+      const t = document.getElementById("toast");
+      t.textContent = msg; t.classList.add("show");
+      setTimeout(() => t.classList.remove("show"), 1800);
+    };
+
+    const map = L.map("map", { zoomControl: true }).setView([20.5937, 78.9629], 5);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19, attribution: "&copy; OpenStreetMap contributors"
+    }).addTo(map);
+
+    const bizIcon = L.divIcon({ html: "🏢", className: "", iconSize: [28, 28], iconAnchor: [14, 28] });
+    const dot = (color) => L.divIcon({ html: `<div style="width:12px;height:12px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 0 0 1px ${color}"></div>`, className: "", iconSize: [16, 16], iconAnchor: [8, 8] });
+
+    const existing = decodeState();
+    if (existing) renderViewer(existing); else renderEditor();
+
+    // ======================================================================
+    //  EDITOR MODE
+    // ======================================================================
+    function renderEditor() {
+      let bizMarker = null, bizLatLng = null;
+      let placingBiz = false;
+      let activeMode = "car";
+      // per-mode data
+      const routes = {};
+      // anchors = points you click; segs[i] = the drawn path from anchor[i] to anchor[i+1]
+      // (road-snapped polyline, or a straight [a,b] fallback). Rendered line = all segs joined.
+      MODES.forEach(m => { routes[m.key] = { anchors: [], segs: [], markers: [], line: L.polyline([], { color: m.color, weight: 5, opacity: 0.9 }).addTo(map), note: "", entry: "", blocked: false }; });
+
+      const sb = document.getElementById("sidebar");
+      sb.innerHTML = `
+        <div class="brand">
+          <h1><span>Last</span>Mile</h1>
+          <p>One destination. A different route for every vehicle.</p>
+        </div>
+
+        <div class="section">
+          <h2>1 · Find your business</h2>
+          <input type="text" id="search" placeholder="Search area, landmark, or city…" autocomplete="off"/>
+          <div id="results"></div>
+          <p class="hint">Small colony not showing? Add your city (e.g. “Suraj Valley, Dehradun”). Or just drag the map and drop your pin in step 2 — search is only a shortcut.</p>
+        </div>
+
+        <div class="section">
+          <h2>2 · Set your location</h2>
+          <button id="btnBiz">📍 Tap to place pin on map</button>
+          <label>…or paste a Google Maps link / coordinates</label>
+          <input type="text" id="pastePin" placeholder="e.g. 28.4866, 77.2985  or a maps.google link"/>
+          <p class="hint" id="bizStatus">Tap the button then your doorstep on the map — or paste coordinates above.</p>
+        </div>
+
+        <div class="section">
+          <h2>3 · Draw a route per vehicle</h2>
+          <div class="modes" id="modes"></div>
+          <p class="hint" id="modeHint"></p>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:10px 0 0;color:var(--text)">
+            <input type="checkbox" id="snap" checked style="width:auto"/> 🛣️ Snap to roads (follow curves)
+          </label>
+          <div class="row" style="margin-top:10px">
+            <button id="btnUndo" class="ghost">↶ Undo point</button>
+            <button id="btnClear" class="ghost danger">Clear this route</button>
+          </div>
+          <button id="btnBlock" class="ghost" style="margin-top:8px">🚫 This vehicle can't reach the door</button>
+          <label>Note for this vehicle</label>
+          <textarea id="note" rows="2" placeholder="e.g. Cars: park behind the blue building. Bikes: cut through the gali next to the temple."></textarea>
+          <label>Coming from (entry point)</label>
+          <input type="text" id="entry" placeholder="e.g. From Ring Road / Bus Stand side"/>
+        </div>
+
+        <div class="section">
+          <h2>4 · Get your shareable link</h2>
+          <label>Business name</label>
+          <input type="text" id="bizName" placeholder="e.g. Sharma General Store"/>
+          <button id="btnGen" class="primary" style="margin-top:10px">Generate smart link</button>
+          <div id="linkOut" style="margin-top:10px; display:none;">
+            <div class="link-box" id="linkBox"></div>
+            <button id="btnShare" class="primary" style="margin-top:8px">📋 Copy shareable message</button>
+            <div class="row" style="margin-top:8px">
+              <button id="btnCopy">Copy link</button>
+              <button id="btnPreview" class="ghost">Preview as customer</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer">Prototype · every route is stored inside the link itself — no server, no signup.</div>
+      `;
+
+      const $ = (id) => document.getElementById(id);
+
+      // build mode chips
+      const modesEl = $("modes");
+      MODES.forEach(m => {
+        const el = document.createElement("div");
+        el.className = "mode"; el.dataset.key = m.key;
+        el.innerHTML = `<span class="emoji">${m.emoji}</span>${m.label}<span class="count" style="background:${m.color};color:#fff"></span>`;
+        el.onclick = () => selectMode(m.key);
+        modesEl.appendChild(el);
+      });
+
+      function refreshChips() {
+        MODES.forEach(m => {
+          const el = modesEl.querySelector(`[data-key="${m.key}"]`);
+          const r = routes[m.key];
+          el.classList.toggle("sel", m.key === activeMode);
+          el.classList.toggle("has", r.anchors.length > 0 || r.blocked);
+          el.style.borderColor = m.key === activeMode ? m.color : "";
+          const c = el.querySelector(".count");
+          if (r.blocked) { c.textContent = "🚫"; c.style.background = "#ef4444"; }
+          else { c.textContent = r.anchors.length; c.style.background = m.color; }
+        });
+      }
+
+      function selectMode(key) {
+        // save current inputs into current mode
+        routes[activeMode].note = $("note").value;
+        routes[activeMode].entry = $("entry").value;
+        activeMode = key;
+        placingBiz = false; $("btnBiz").classList.remove("active");
+        $("note").value = routes[key].note;
+        $("entry").value = routes[key].entry;
+        syncModeUI();
+        map.getContainer().style.cursor = "crosshair";
+        refreshChips();
+      }
+
+      function syncModeUI() {
+        const key = activeMode, r = routes[key], m = MODE[key];
+        const blocked = r.blocked;
+        $("btnBlock").classList.toggle("active", blocked);
+        $("btnBlock").textContent = blocked ? "✅ Vehicle CAN reach — undo" : "🚫 This vehicle can't reach the door";
+        $("note").placeholder = blocked
+          ? "Where should they stop instead? e.g. Trucks: unload on the main road, we bring a trolley."
+          : "e.g. Cars: park behind the blue building. Bikes: cut through the gali next to the temple.";
+        if (blocked) {
+          $("modeHint").innerHTML = `<strong style="color:var(--danger)">${m.emoji} ${m.label} can't reach the door.</strong> Optionally trace the route to the nearest drop-off point.`;
+        } else {
+          $("modeHint").innerHTML = `Drawing the <strong style="color:${m.color}">${m.label}</strong> route — tap along the road, corner by corner, ending at your door.`;
+        }
+      }
+
+      $("note").addEventListener("input", () => { routes[activeMode].note = $("note").value; });
+      $("entry").addEventListener("input", () => { routes[activeMode].entry = $("entry").value; });
+      $("btnBlock").onclick = () => { routes[activeMode].blocked = !routes[activeMode].blocked; syncModeUI(); refreshChips(); };
+
+      $("btnBiz").onclick = () => {
+        placingBiz = !placingBiz;
+        $("btnBiz").classList.toggle("active", placingBiz);
+        map.getContainer().style.cursor = placingBiz ? "crosshair" : "crosshair";
+        $("modeHint").textContent = placingBiz ? "Tap your business's exact doorstep on the map." : $("modeHint").textContent;
+      };
+
+      function placeBiz(ll, recenter) {
+        bizLatLng = ll;
+        if (bizMarker) map.removeLayer(bizMarker);
+        bizMarker = L.marker(ll, { icon: bizIcon }).addTo(map).bindPopup("Your business");
+        placingBiz = false; $("btnBiz").classList.remove("active");
+        if (recenter) map.setView(ll, 18);
+        $("bizStatus").innerHTML = "✅ Business location set. Now draw your routes below.";
+      }
+
+      // paste a Google Maps link or "lat, lng" to drop the pin
+      $("pastePin").addEventListener("input", (e) => {
+        const raw = e.target.value.trim();
+        if (!raw) return;
+        const ll = parseLatLng(raw);
+        if (ll) {
+          placeBiz(ll, true);
+          toast("Pin placed from pasted location");
+        } else if (/goo\.gl|maps\.app/.test(raw)) {
+          $("bizStatus").innerHTML = "That’s a short link — open it in Google Maps, long-press the red pin, copy the numbers it shows, and paste those here.";
+        }
+      });
+
+      map.on("click", (e) => {
+        const ll = [e.latlng.lat, e.latlng.lng];
+        if (placingBiz) {
+          placeBiz(ll, false);
+          return;
+        }
+        // drawing route for active mode
+        addAnchor(routes[activeMode], ll);
+      });
+
+      function renderLine(r) {
+        const coords = [];
+        r.segs.forEach(s => { s.forEach(pt => coords.push(pt)); });
+        if (!r.segs.length && r.anchors.length) coords.push(r.anchors[0]);
+        r.line.setLatLngs(coords);
+      }
+
+      function addAnchor(r, ll) {
+        r.anchors.push(ll);
+        const mk = L.marker(ll, { icon: dot(MODE[activeMode].color) }).addTo(map);
+        r.markers.push(mk);
+        if (r.anchors.length >= 2) {
+          const prev = r.anchors[r.anchors.length - 2];
+          if ($("snap").checked) {
+            r.segs.push([prev, ll]); // straight placeholder while routing
+            const segIdx = r.segs.length - 1;
+            renderLine(r);
+            snapSegment(prev, ll).then(coords => {
+              if (coords && r.segs[segIdx]) { r.segs[segIdx] = coords; renderLine(r); }
+            });
+          } else {
+            r.segs.push([prev, ll]);
+          }
+        }
+        renderLine(r); refreshChips();
+      }
+
+      $("btnUndo").onclick = () => {
+        const r = routes[activeMode];
+        r.anchors.pop(); const m = r.markers.pop(); if (m) map.removeLayer(m);
+        r.segs.pop();
+        renderLine(r); refreshChips();
+      };
+      $("btnClear").onclick = () => {
+        const r = routes[activeMode];
+        r.anchors = []; r.segs = []; r.markers.forEach(m => map.removeLayer(m)); r.markers = [];
+        r.line.setLatLngs([]); refreshChips();
+      };
+
+      // geocoding search
+      let searchTimer = null;
+      $("search").addEventListener("input", (e) => {
+        clearTimeout(searchTimer);
+        const q = e.target.value.trim();
+        if (q.length < 3) { $("results").innerHTML = ""; return; }
+        searchTimer = setTimeout(() => doSearch(q), 400);
+      });
+      function doSearch(q) {
+        const el = $("results");
+        el.className = "search-results";
+        el.innerHTML = '<div style="cursor:default;color:var(--muted)">Searching…</div>';
+        fetch("https://nominatim.openstreetmap.org/search?format=json&limit=6&q=" + encodeURIComponent(q), { headers: { "Accept-Language": "en" } })
+          .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+          .then(list => {
+            if (!list.length) {
+              el.innerHTML = `<div style="cursor:default;color:var(--muted)">No match for “${esc(q)}”. Try adding your city, or drag the map and drop your pin manually.</div>`;
+              return;
+            }
+            el.innerHTML = "";
+            list.forEach(p => {
+              const d = document.createElement("div");
+              d.textContent = p.display_name;
+              d.onclick = () => { map.setView([+p.lat, +p.lon], 17); el.innerHTML = ""; $("search").value = ""; };
+              el.appendChild(d);
+            });
+          })
+          .catch(() => {
+            el.innerHTML = '<div style="cursor:default;color:var(--muted)">Search unavailable right now — drag the map and drop your pin manually in step 2.</div>';
+          });
+      }
+
+      // generate link
+      $("btnGen").onclick = () => {
+        if (!bizLatLng) { toast("Set your business location first"); return; }
+        const built = {};
+        MODES.forEach(m => {
+          const r = routes[m.key];
+          // store ONLY the clicked anchor points — the viewer re-snaps curves on the fly.
+          const a = r.anchors.map(pt => pt.map(v => +v.toFixed(5)));
+          if (r.blocked) built[m.key] = { b: 1, a, t: r.note.trim(), e: r.entry.trim() };
+          else if (r.anchors.length >= 2) built[m.key] = { a, t: r.note.trim(), e: r.entry.trim() };
+        });
+        if (!Object.keys(built).length) { toast("Draw a route or mark a vehicle as blocked"); return; }
+        const state = { n: $("bizName").value.trim() || "This business", s: bizLatLng.map(v => +v.toFixed(6)), routes: built, ts: Date.now() };
+        const url = location.origin + location.pathname + "#" + encodeState(state);
+        $("linkOut").style.display = "block";
+        $("linkBox").textContent = url; $("linkBox").dataset.url = url;
+        toast(Object.keys(built).length + " route(s) saved to link");
+      };
+
+      document.addEventListener("click", (e) => {
+        if (e.target.id === "btnShare") {
+          const url = $("linkBox").dataset.url;
+          const name = ($("bizName").value.trim()) || "my location";
+          const text = `Follow this route to reach ${name} 📍 — it shows the exact way in for your vehicle (car / bike / on foot). Don't just search the name, use this:`;
+          shareRoute(name, text, url);
+        }
+        if (e.target.id === "btnCopy") {
+          navigator.clipboard.writeText($("linkBox").dataset.url).then(() => toast("Copied — share on WhatsApp!"));
+        }
+        if (e.target.id === "btnPreview") {
+          location.hash = $("linkBox").dataset.url.split("#")[1]; location.reload();
+        }
+      });
+
+      selectMode("car");
+    }
+
+    // ======================================================================
+    //  VIEWER MODE
+    // ======================================================================
+    function renderViewer(st) {
+      const anchorsOf = (r) => (r && r.a && r.a.length) ? r.a : (r && r.p) ? r.p : [];
+      const available = MODES.filter(m => { const r = st.routes && st.routes[m.key]; return r && (r.b || anchorsOf(r).length >= 2); });
+      // default to a mode that actually has a usable route, else first
+      let current = (available.find(m => m.key === "car" && !st.routes.car.b) || available.find(m => !st.routes[m.key].b) || available[0]).key;
+
+      let pathLayer = L.layerGroup().addTo(map);
+      const bizMarker = st.s ? L.marker(st.s, { icon: bizIcon }).addTo(map).bindPopup(esc(st.n || "Destination")) : null;
+      const ago = st.ts ? timeAgo(st.ts) : "";
+
+      const sb = document.getElementById("sidebar");
+      sb.innerHTML = `
+        <div class="brand">
+          <h1><span>Last</span>Mile</h1>
+          <p>Owner-verified route — for how <em>you</em> travel.</p>
+        </div>
+        <div class="section">
+          <h2>Destination</h2>
+          <div style="font-size:16px;font-weight:600;margin-bottom:8px">${esc(st.n || "This business")}</div>
+          ${ago ? `<div class="badge">✅ Routes set by the owner ${ago}</div>` : ""}
+        </div>
+        <div class="section">
+          <h2>How are you coming?</h2>
+          <div class="modes" id="modes"></div>
+        </div>
+        <div class="section" id="detail"></div>
+        <div class="section">
+          <button id="btnGoogle" class="primary">Navigate this route in Google Maps</button>
+          <p class="hint">Opens Google Maps with turn-by-turn guided through the owner's exact path — not Google's guess.</p>
+          <button id="btnShareV" class="ghost" style="margin-top:8px">📋 Copy this route to share</button>
+        </div>
+        <div class="section"><button id="btnMakeOwn" class="ghost">Make routes for my own business →</button></div>
+        <div class="footer">Prototype · these routes live inside the link you were sent.</div>
+      `;
+
+      const modesEl = document.getElementById("modes");
+      available.forEach(m => {
+        const el = document.createElement("div");
+        el.className = "mode"; el.dataset.key = m.key;
+        el.innerHTML = `<span class="emoji">${m.emoji}</span>${m.label}${st.routes[m.key].b ? " 🚫" : ""}`;
+        el.onclick = () => select(m.key);
+        modesEl.appendChild(el);
+      });
+
+      function select(key) {
+        current = key;
+        const m = MODE[key], r = st.routes[key];
+        modesEl.querySelectorAll(".mode").forEach(el => {
+          const on = el.dataset.key === key;
+          el.classList.toggle("sel", on);
+          el.style.borderColor = on ? m.color : "";
+        });
+        pathLayer.clearLayers();
+        const anchors = anchorsOf(r);
+        const color = r.b ? "#ef4444" : m.color;
+        const hasPath = anchors.length >= 2;
+        if (hasPath) {
+          // draw straight immediately, then snap each segment to the road and refine
+          const line = L.polyline(anchors, { color, weight: 6, opacity: 0.95, dashArray: r.b ? "10 8" : null }).addTo(pathLayer);
+          L.marker(anchors[0], { icon: dot(color) }).addTo(pathLayer).bindPopup(r.b ? "Come this far, then stop" : "Start here");
+          map.fitBounds(L.latLngBounds(anchors.concat(st.s ? [st.s] : [])).pad(0.25));
+          // if these are raw clicked points (not a pre-snapped dense path), rebuild curves
+          if (!(r.p && r.p.length > anchors.length)) reSnapLine(anchors, line, key);
+        } else if (st.s) {
+          map.setView(st.s, 16);
+        }
+        const detailEl = document.getElementById("detail");
+        if (r.b) {
+          detailEl.innerHTML = `
+            <h2>${m.emoji} ${m.label}</h2>
+            <div class="warn">🚫 A ${m.label.toLowerCase()} can’t reach the door here.${hasPath ? " Follow the dashed line to the nearest drop-off point." : ""}</div>
+            ${r.t ? `<p style="font-size:14px;line-height:1.5;margin:0">“${esc(r.t)}”</p>` : `<p class="hint" style="margin:0">Please switch to another vehicle for the last stretch.</p>`}
+          `;
+        } else {
+          detailEl.innerHTML = `
+            <h2>${m.emoji} ${m.label} route</h2>
+            ${r.e ? `<p class="hint" style="margin:0 0 8px"><strong style="color:var(--text)">Coming from:</strong> ${esc(r.e)}</p>` : ""}
+            ${r.t ? `<p style="font-size:14px;line-height:1.5;margin:0">“${esc(r.t)}”</p>` : `<p class="hint" style="margin:0">Follow the ${m.label.toLowerCase()} line to the door.</p>`}
+          `;
+        }
+      }
+
+      // Rebuild road-following curves from the clicked anchors, segment by segment.
+      // Bails if the user switched vehicles mid-snap (current !== key).
+      async function reSnapLine(anchors, line, key) {
+        const coords = [anchors[0]];
+        for (let i = 1; i < anchors.length; i++) {
+          if (current !== key) return;
+          const seg = await snapSegment(anchors[i - 1], anchors[i]);
+          if (seg) seg.slice(1).forEach(p => coords.push(p));
+          else coords.push(anchors[i]);
+          if (current === key) line.setLatLngs(coords);
+        }
+      }
+
+      document.getElementById("btnGoogle").onclick = () => {
+        const r = st.routes[current];
+        if (!r) return;
+        // Prefer the owner's clicked anchors as Google waypoints; fall back to the drawn geometry.
+        let guide = (r.a && r.a.length ? r.a : (r.p || [])).slice();
+        if (!guide.length) { if (st.s) window.open(`https://www.google.com/maps/dir/?api=1&destination=${st.s[0]},${st.s[1]}&travelmode=${MODE[current].gmaps}`, "_blank"); return; }
+        // Destination: the door (or, if this vehicle is blocked, the last drawn drop-off point).
+        const dest = r.b ? guide[guide.length - 1] : (st.s || guide[guide.length - 1]);
+        // Waypoints steer Google through the owner's path. The URL API caps at 9 — downsample if needed.
+        let wps = guide.filter(p => p[0] !== dest[0] || p[1] !== dest[1]);
+        if (wps.length > 9) {
+          const step = (wps.length - 1) / 9, s = [];
+          for (let i = 0; i < 9; i++) s.push(wps[Math.round(i * step)]);
+          wps = s;
+        }
+        const wpStr = wps.map(p => `${p[0]},${p[1]}`).join("|");
+        const url = `https://www.google.com/maps/dir/?api=1&destination=${dest[0]},${dest[1]}` +
+                    (wpStr ? `&waypoints=${encodeURIComponent(wpStr)}` : "") +
+                    `&travelmode=${MODE[current].gmaps}`;
+        window.open(url, "_blank");
+      };
+      document.getElementById("btnShareV").onclick = () => {
+        const name = st.n || "this place";
+        const text = `Follow this route to reach ${name} 📍 — it shows the exact way in for your vehicle. Use this instead of just searching the name:`;
+        shareRoute(name, text, location.href);
+      };
+      document.getElementById("btnMakeOwn").onclick = () => { location.hash = ""; location.reload(); };
+
+      select(current);
+    }
+
+    // Snap a straight segment to the road network via the public OSRM demo server.
+    // Returns road-following [lat,lng] points, or null (caller keeps the straight line).
+    // Note: the demo server only exposes the driving profile, so walk/bike snap to
+    // drivable roads too — fine for a prototype, swap for a paid router per-profile later.
+    function snapSegment(a, b) {
+      const url = `https://router.project-osrm.org/route/v1/driving/${a[1]},${a[0]};${b[1]},${b[0]}?overview=full&geometries=geojson`;
+      return fetch(url)
+        .then(r => r.ok ? r.json() : null)
+        .then(j => {
+          const g = j && j.routes && j.routes[0] && j.routes[0].geometry;
+          if (!g || !g.coordinates || g.coordinates.length < 2) return null;
+          return g.coordinates.map(c => [+c[1].toFixed(5), +c[0].toFixed(5)]);
+        })
+        .catch(() => null);
+    }
+
+    // Pull lat/lng from a full Google Maps URL or a plain "lat, lng" paste.
+    // (Short goo.gl links can't be resolved in-browser — Google blocks it.)
+    function parseLatLng(text) {
+      const inRange = (a, b) => Math.abs(a) <= 90 && Math.abs(b) <= 180;
+      let m = text.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);           // exact place marker
+      if (m && inRange(+m[1], +m[2])) return [+m[1], +m[2]];
+      m = text.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);                    // map center in URL
+      if (m && inRange(+m[1], +m[2])) return [+m[1], +m[2]];
+      m = text.match(/q=(-?\d+\.\d+),(-?\d+\.\d+)/);                   // ?q=lat,lng
+      if (m && inRange(+m[1], +m[2])) return [+m[1], +m[2]];
+      m = text.match(/^\s*(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*$/); // plain "lat, lng"
+      if (m && inRange(+m[1], +m[2])) return [+m[1], +m[2]];
+      return null;
+    }
+
+    // Share a route by copying the message + link to the clipboard. Tries to shorten the
+    // (long) link first, best-effort — falls back to the full link if the shortener is unreachable.
+    async function shareRoute(name, text, url) {
+      toast("Preparing message…");
+      let finalUrl = url;
+      if (/^https?:/i.test(url)) {
+        try { finalUrl = await shorten(url); } catch (e) { finalUrl = url; }
+      }
+      const msg = text + "\n" + finalUrl;
+      copyText(msg);
+    }
+
+    function shorten(url) {
+      return fetch("https://is.gd/create.php?format=simple&url=" + encodeURIComponent(url))
+        .then(r => r.ok ? r.text() : url)
+        .then(t => (t && t.trim().startsWith("http")) ? t.trim() : url)
+        .catch(() => url);
+    }
+
+    function copyText(msg) {
+      const done = () => toast("Copied! Paste it into WhatsApp or SMS");
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(msg).then(done).catch(() => legacyCopy(msg, done));
+      } else {
+        legacyCopy(msg, done);
+      }
+    }
+    function legacyCopy(msg, done) {
+      const ta = document.createElement("textarea");
+      ta.value = msg; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      try { document.execCommand("copy"); done(); } catch (e) { toast("Couldn't copy — select the link manually"); }
+      document.body.removeChild(ta);
+    }
+
+    function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
+    function timeAgo(ts) {
+      const s = Math.floor((Date.now() - ts) / 1000);
+      if (s < 3600) return Math.max(1, Math.floor(s / 60)) + " min ago";
+      if (s < 86400) return Math.floor(s / 3600) + " hr ago";
+      return Math.floor(s / 86400) + " days ago";
+    }
+  })();
+  </script>
+</body>
+</html>
