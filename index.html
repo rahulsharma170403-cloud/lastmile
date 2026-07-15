@@ -122,15 +122,14 @@
       return coords;
     }
 
-    // URL-safe base64 (no +, /, or = — those break WhatsApp's link detection)
-    function b64urlEnc(str) { return btoa(unescape(encodeURIComponent(str))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); }
-    function b64urlDec(s) { s = s.replace(/-/g, "+").replace(/_/g, "/"); while (s.length % 4) s += "="; return decodeURIComponent(escape(atob(s))); }
-
+    // NOTE: keep the exact "r=" + standard base64 fragment format — this is what WhatsApp
+    // reliably turns into a clickable link. base64url (-,_ ) broke linkifying. Polyline
+    // compression (above) keeps the payload short; the format stays proven-clickable.
     function decodeState() {
       const h = location.hash.slice(1);
-      if (!h) return null;
+      if (!h.startsWith("r=")) return null;
       try {
-        const obj = JSON.parse(b64urlDec(h));
+        const obj = JSON.parse(decodeURIComponent(escape(atob(h.slice(2)))));
         if (!obj || !obj.routes) return null;
         if (typeof obj.s === "string") obj.s = decPoly(obj.s)[0];
         for (const k in obj.routes) {
@@ -152,7 +151,7 @@
         if (r.e) o.e = r.e;
         out.routes[k] = o;
       }
-      return b64urlEnc(JSON.stringify(out));
+      return "r=" + btoa(unescape(encodeURIComponent(JSON.stringify(out))));
     }
 
     const toast = (msg) => {
