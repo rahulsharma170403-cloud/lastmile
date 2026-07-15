@@ -122,15 +122,19 @@
       return coords;
     }
 
+    // URL-safe base64 (no +, /, or = — those break WhatsApp's link detection)
+    function b64urlEnc(str) { return btoa(unescape(encodeURIComponent(str))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); }
+    function b64urlDec(s) { s = s.replace(/-/g, "+").replace(/_/g, "/"); while (s.length % 4) s += "="; return decodeURIComponent(escape(atob(s))); }
+
     function decodeState() {
       const h = location.hash.slice(1);
-      if (!h.startsWith("r=")) return null;
+      if (!h) return null;
       try {
-        const obj = JSON.parse(decodeURIComponent(escape(atob(h.slice(2)))));
+        const obj = JSON.parse(b64urlDec(h));
+        if (!obj || !obj.routes) return null;
         if (typeof obj.s === "string") obj.s = decPoly(obj.s)[0];
-        const routes = obj.routes || {};
-        for (const k in routes) {
-          const r = routes[k];
+        for (const k in obj.routes) {
+          const r = obj.routes[k];
           if (typeof r.a === "string") r.a = decPoly(r.a);
           if (typeof r.p === "string") r.p = decPoly(r.p);
         }
@@ -148,7 +152,7 @@
         if (r.e) o.e = r.e;
         out.routes[k] = o;
       }
-      return "r=" + btoa(unescape(encodeURIComponent(JSON.stringify(out))));
+      return b64urlEnc(JSON.stringify(out));
     }
 
     const toast = (msg) => {
