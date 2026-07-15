@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
   <title>LastMile — routes for every vehicle</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
@@ -370,10 +372,17 @@
         });
         if (!Object.keys(built).length) { toast("Draw a route or mark a vehicle as blocked"); return; }
         const state = { n: $("bizName").value.trim() || "This business", s: bizLatLng.map(v => +v.toFixed(6)), routes: built, ts: Date.now() };
-        const url = location.origin + location.pathname + "#" + encodeState(state);
+        const longUrl = location.origin + location.pathname + "#" + encodeState(state);
         $("linkOut").style.display = "block";
-        $("linkBox").textContent = url; $("linkBox").dataset.url = url;
-        toast(Object.keys(built).length + " route(s) saved to link");
+        $("linkBox").textContent = "Creating short link…";
+        $("linkBox").dataset.url = longUrl;      // used for copy/share
+        $("linkBox").dataset.long = longUrl;     // used for preview (keeps the #route data)
+        toast(Object.keys(built).length + " route(s) saved");
+        shorten(longUrl).then(short => {
+          $("linkBox").textContent = short;
+          $("linkBox").dataset.url = short;
+          if (/tinyurl/.test(short)) toast("Short link ready 🎉");
+        });
       };
 
       document.addEventListener("click", (e) => {
@@ -387,7 +396,7 @@
           navigator.clipboard.writeText($("linkBox").dataset.url).then(() => toast("Copied — share on WhatsApp!"));
         }
         if (e.target.id === "btnPreview") {
-          location.hash = $("linkBox").dataset.url.split("#")[1]; location.reload();
+          location.hash = $("linkBox").dataset.long.split("#")[1]; location.reload();
         }
       });
 
@@ -557,9 +566,9 @@
     // Share a route by copying the message + link to the clipboard. Tries to shorten the
     // (long) link first, best-effort — falls back to the full link if the shortener is unreachable.
     async function shareRoute(name, text, url) {
-      toast("Preparing message…");
       let finalUrl = url;
-      if (/^https?:/i.test(url)) {
+      if (/^https?:/i.test(url) && !/tinyurl/.test(url)) {
+        toast("Preparing message…");
         try { finalUrl = await shorten(url); } catch (e) { finalUrl = url; }
       }
       const msg = text + "\n" + finalUrl;
