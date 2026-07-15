@@ -567,7 +567,8 @@
     }
 
     function shorten(url) {
-      return fetch("https://is.gd/create.php?format=simple&url=" + encodeURIComponent(url))
+      // TinyURL: the one shortener that returns CORS headers for our origin and preserves the #fragment.
+      return fetch("https://tinyurl.com/api-create.php?url=" + encodeURIComponent(url))
         .then(r => r.ok ? r.text() : url)
         .then(t => (t && t.trim().startsWith("http")) ? t.trim() : url)
         .catch(() => url);
