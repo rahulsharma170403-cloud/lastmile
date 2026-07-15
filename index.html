@@ -97,12 +97,59 @@
     ];
     const MODE = Object.fromEntries(MODES.map(m => [m.key, m]));
 
+    // --- polyline encoding (Google's algorithm, 1e5 precision) — compresses coord lists ~5x ---
+    function encPoly(points) {
+      let last = [0, 0], out = "";
+      const enc = (v) => { v = v < 0 ? ~(v << 1) : (v << 1); let s = ""; while (v >= 0x20) { s += String.fromCharCode((0x20 | (v & 0x1f)) + 63); v >>= 5; } return s + String.fromCharCode(v + 63); };
+      for (const p of points) {
+        const lat = Math.round(p[0] * 1e5), lng = Math.round(p[1] * 1e5);
+        out += enc(lat - last[0]) + enc(lng - last[1]);
+        last = [lat, lng];
+      }
+      return out;
+    }
+    function decPoly(str) {
+      let i = 0, lat = 0, lng = 0; const coords = [];
+      while (i < str.length) {
+        let b, shift = 0, res = 0;
+        do { b = str.charCodeAt(i++) - 63; res |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+        lat += (res & 1) ? ~(res >> 1) : (res >> 1);
+        shift = 0; res = 0;
+        do { b = str.charCodeAt(i++) - 63; res |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+        lng += (res & 1) ? ~(res >> 1) : (res >> 1);
+        coords.push([lat / 1e5, lng / 1e5]);
+      }
+      return coords;
+    }
+
     function decodeState() {
       const h = location.hash.slice(1);
       if (!h.startsWith("r=")) return null;
-      try { return JSON.parse(decodeURIComponent(escape(atob(h.slice(2))))); } catch (e) { return null; }
+      try {
+        const obj = JSON.parse(decodeURIComponent(escape(atob(h.slice(2)))));
+        if (typeof obj.s === "string") obj.s = decPoly(obj.s)[0];
+        const routes = obj.routes || {};
+        for (const k in routes) {
+          const r = routes[k];
+          if (typeof r.a === "string") r.a = decPoly(r.a);
+          if (typeof r.p === "string") r.p = decPoly(r.p);
+        }
+        return obj;
+      } catch (e) { return null; }
     }
-    function encodeState(state) { return "r=" + btoa(unescape(encodeURIComponent(JSON.stringify(state)))); }
+    function encodeState(state) {
+      const out = { n: state.n, ts: state.ts, routes: {} };
+      if (state.s) out.s = encPoly([state.s]);
+      for (const k in state.routes) {
+        const r = state.routes[k], o = {};
+        if (r.b) o.b = 1;
+        if (r.a && r.a.length) o.a = encPoly(r.a);
+        if (r.t) o.t = r.t;
+        if (r.e) o.e = r.e;
+        out.routes[k] = o;
+      }
+      return "r=" + btoa(unescape(encodeURIComponent(JSON.stringify(out))));
+    }
 
     const toast = (msg) => {
       const t = document.getElementById("toast");
@@ -392,17 +439,12 @@
         });
         if (!Object.keys(built).length) { toast("Draw a route or mark a vehicle as blocked"); return; }
         const state = { n: $("bizName").value.trim() || "This business", s: bizLatLng.map(v => +v.toFixed(6)), routes: built, ts: Date.now() };
-        const longUrl = location.origin + location.pathname + "#" + encodeState(state);
+        const url = location.origin + location.pathname + "#" + encodeState(state);
         $("linkOut").style.display = "block";
-        $("linkBox").textContent = "Creating short link…";
-        $("linkBox").dataset.url = longUrl;      // used for copy/share
-        $("linkBox").dataset.long = longUrl;     // used for preview (keeps the #route data)
-        toast(Object.keys(built).length + " route(s) saved");
-        shorten(longUrl).then(short => {
-          $("linkBox").textContent = short;
-          $("linkBox").dataset.url = short;
-          if (/tinyurl/.test(short)) toast("Short link ready 🎉");
-        });
+        $("linkBox").textContent = url;
+        $("linkBox").dataset.url = url;
+        $("linkBox").dataset.long = url; // used for preview (keeps the #route data)
+        toast(Object.keys(built).length + " route(s) — link ready 🎉");
       };
 
       document.addEventListener("click", (e) => {
@@ -584,24 +626,9 @@
       return null;
     }
 
-    // Share a route by copying the message + link to the clipboard. Tries to shorten the
-    // (long) link first, best-effort — falls back to the full link if the shortener is unreachable.
-    async function shareRoute(name, text, url) {
-      let finalUrl = url;
-      if (/^https?:/i.test(url) && !/tinyurl/.test(url)) {
-        toast("Preparing message…");
-        try { finalUrl = await shorten(url); } catch (e) { finalUrl = url; }
-      }
-      const msg = text + "\n" + finalUrl;
-      copyText(msg);
-    }
-
-    function shorten(url) {
-      // TinyURL: the one shortener that returns CORS headers for our origin and preserves the #fragment.
-      return fetch("https://tinyurl.com/api-create.php?url=" + encodeURIComponent(url))
-        .then(r => r.ok ? r.text() : url)
-        .then(t => (t && t.trim().startsWith("http")) ? t.trim() : url)
-        .catch(() => url);
+    // Share a route by copying the message + link to the clipboard.
+    function shareRoute(name, text, url) {
+      copyText(text + "\n" + url);
     }
 
     function copyText(msg) {
